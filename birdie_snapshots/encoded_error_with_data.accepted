@@ -1,7 +1,7 @@
 ---
 version: 1.2.3
 title: encoded error with data
-file: ./test/json_rpc_test.gleam
+file: ./test/message_test.gleam
 test_name: encoded_error_data_test
 ---
 {"jsonrpc":"2.0","id":"id string","error":{"code":-32700,"message":"Parse error","data":"Unexpected End of Input"}}

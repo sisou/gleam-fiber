@@ -1,7 +1,7 @@
 ---
 version: 1.2.3
 title: encoded notification with params
-file: ./test/json_rpc_test.gleam
+file: ./test/message_test.gleam
 test_name: encoded_notification_params_test
 ---
 {"jsonrpc":"2.0","method":"progress","params":{"complete":0.5}}

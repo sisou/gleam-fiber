@@ -1,7 +1,7 @@
 import gleam/dynamic.{type Dynamic}
 import gleam/json.{type Json}
-import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
 
 pub type RpcId {
@@ -187,57 +187,46 @@ fn encode_id(id: RpcId) {
 
 pub fn encode(message: Message(Json)) -> String {
   case message {
-    Notification(method, params) -> {
+    Notification(method, params) ->
       json.object(
-        [#("jsonrpc", json.string("2.0")), #("method", json.string(method))]
-        |> list.append(
-          params
-          |> option.map(fn(params) { [#("params", params)] })
-          |> option.unwrap([]),
-        ),
+        result.values([
+          #("jsonrpc", json.string("2.0")) |> Ok,
+          #("method", json.string(method)) |> Ok,
+          option.map(params, pair.new("params", _)) |> option.to_result(Nil),
+        ]),
       )
-    }
-    Request(id, method, params) -> {
+    Request(id, method, params) ->
       json.object(
-        [
-          #("jsonrpc", json.string("2.0")),
-          #("id", encode_id(id)),
-          #("method", json.string(method)),
-        ]
-        |> list.append(
-          params
-          |> option.map(fn(params) { [#("params", params)] })
-          |> option.unwrap([]),
-        ),
+        result.values([
+          #("jsonrpc", json.string("2.0")) |> Ok,
+          #("id", encode_id(id)) |> Ok,
+          #("method", json.string(method)) |> Ok,
+          params |> option.map(pair.new("params", _)) |> option.to_result(Nil),
+        ]),
       )
-    }
-    SuccessResponse(id, result) -> {
+    SuccessResponse(id, result) ->
       json.object([
         #("jsonrpc", json.string("2.0")),
         #("id", encode_id(id)),
         #("result", result),
       ])
-    }
-    ErrorResponse(id, error) -> {
+    ErrorResponse(id, error) ->
       json.object([
         #("jsonrpc", json.string("2.0")),
         #("id", json.nullable(id, encode_id)),
         #(
           "error",
           json.object(
-            [
-              #("code", json.int(error.code)),
-              #("message", json.string(error.message)),
-            ]
-            |> list.append(
+            result.values([
+              #("code", json.int(error.code)) |> Ok,
+              #("message", json.string(error.message)) |> Ok,
               error.data
-              |> option.map(fn(data) { [#("data", data)] })
-              |> option.unwrap([]),
-            ),
+                |> option.map(pair.new("data", _))
+                |> option.to_result(Nil),
+            ]),
           ),
         ),
       ])
-    }
   }
   |> json.to_string
 }
