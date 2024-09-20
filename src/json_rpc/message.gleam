@@ -9,15 +9,16 @@ pub type RpcId {
   StringId(String)
 }
 
-pub type ErrorObject(dyn) {
-  ErrorObject(code: Int, message: String, data: Option(dyn))
+pub type ErrorData(dyn) {
+  ErrorData(code: Int, message: String, data: Option(dyn))
+  ErrorString(String)
 }
 
 pub type Message(dyn) {
   Notification(method: String, params: Option(dyn))
   Request(id: RpcId, method: String, params: Option(dyn))
   SuccessResponse(id: RpcId, result: dyn)
-  ErrorResponse(id: Option(RpcId), error: ErrorObject(dyn))
+  ErrorResponse(id: Option(RpcId), error: ErrorData(dyn))
 }
 
 fn id_decoder() {
@@ -28,12 +29,15 @@ fn id_decoder() {
 }
 
 fn error_decoder() {
-  dynamic.decode3(
-    ErrorObject,
-    dynamic.field("code", dynamic.int),
-    dynamic.field("message", dynamic.string),
-    dynamic.optional_field("data", dynamic.dynamic),
-  )
+  dynamic.any([
+    fn(v) { dynamic.string(v) |> result.map(ErrorString) },
+    dynamic.decode3(
+      ErrorData,
+      dynamic.field("code", dynamic.int),
+      dynamic.field("message", dynamic.string),
+      dynamic.optional_field("data", dynamic.dynamic),
+    ),
+  ])
 }
 
 fn notification_decoder() {
@@ -73,16 +77,12 @@ fn parse_or_format_error_message(error) {
   case error {
     json.UnexpectedFormat(_) ->
       ErrorResponse(
-        error: ErrorObject(
-          code: -32_600,
-          message: "Invalid Request",
-          data: None,
-        ),
+        error: ErrorData(code: -32_600, message: "Invalid Request", data: None),
         id: None,
       )
     json.UnexpectedByte(byte) ->
       ErrorResponse(
-        error: ErrorObject(
+        error: ErrorData(
           code: -32_700,
           message: "Parse error",
           data: Some(json.string("Unexpected Byte: \"" <> byte <> "\"")),
@@ -91,7 +91,7 @@ fn parse_or_format_error_message(error) {
       )
     json.UnexpectedEndOfInput ->
       ErrorResponse(
-        error: ErrorObject(
+        error: ErrorData(
           code: -32_700,
           message: "Parse error",
           data: Some(json.string("Unexpected End of Input")),
@@ -100,7 +100,7 @@ fn parse_or_format_error_message(error) {
       )
     json.UnexpectedSequence(sequence) ->
       ErrorResponse(
-        error: ErrorObject(
+        error: ErrorData(
           code: -32_700,
           message: "Parse error",
           data: Some(json.string("Unexpected Sequence: \"" <> sequence <> "\"")),
@@ -159,18 +159,19 @@ pub fn encode(message: Message(Json)) -> String {
       json.object([
         #("jsonrpc", json.string("2.0")),
         #("id", json.nullable(id, encode_id)),
-        #(
-          "error",
-          json.object(
-            result.values([
-              #("code", json.int(error.code)) |> Ok,
-              #("message", json.string(error.message)) |> Ok,
-              error.data
-                |> option.map(pair.new("data", _))
-                |> option.to_result(Nil),
-            ]),
-          ),
-        ),
+        #("error", case error {
+          ErrorData(code, message, data) ->
+            json.object(
+              result.values([
+                #("code", json.int(code)) |> Ok,
+                #("message", json.string(message)) |> Ok,
+                data
+                  |> option.map(pair.new("data", _))
+                  |> option.to_result(Nil),
+              ]),
+            )
+          ErrorString(s) -> json.string(s)
+        }),
       ])
   }
   |> json.to_string

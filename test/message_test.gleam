@@ -8,7 +8,7 @@ import json_rpc/message
 pub fn encoded_error_test() {
   message.StringId("id string")
   |> option.Some
-  |> message.ErrorResponse(error: message.ErrorObject(
+  |> message.ErrorResponse(error: message.ErrorData(
     code: 404,
     message: "Not Found",
     data: option.None,
@@ -20,7 +20,7 @@ pub fn encoded_error_test() {
 pub fn encoded_error_data_test() {
   message.StringId("id string")
   |> option.Some
-  |> message.ErrorResponse(error: message.ErrorObject(
+  |> message.ErrorResponse(error: message.ErrorData(
     code: -32_700,
     message: "Parse error",
     data: json.string("Unexpected End of Input") |> option.Some,

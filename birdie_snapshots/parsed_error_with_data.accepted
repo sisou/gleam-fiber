@@ -4,4 +4,4 @@ title: parsed error with data
 file: ./test/message_test.gleam
 test_name: parse_error_data_test
 ---
-ErrorResponse(Some(StringId("id string")), ErrorObject(-32700, "Parse error", Some("Unexpected End of Input")))
+ErrorResponse(Some(StringId("id string")), ErrorData(-32700, "Parse error", Some("Unexpected End of Input")))
