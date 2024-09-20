@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: encoded response
+file: ./test/json_rpc_test.gleam
+test_name: encoded_response_test
+---
+{"jsonrpc":"2.0","id":777777,"result":"pong"}

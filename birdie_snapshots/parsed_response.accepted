@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: parsed response
+file: ./test/message_test.gleam
+test_name: parse_response_test
+---
+SuccessResponse(IntId(777777), "pong")

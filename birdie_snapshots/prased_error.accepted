@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: prased error
+file: ./test/message_test.gleam
+test_name: parse_error_test
+---
+ErrorResponse(Some(StringId("id string")), ErrorObject(404, "Not Found", None))

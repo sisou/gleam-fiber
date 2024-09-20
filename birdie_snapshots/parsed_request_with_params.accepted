@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: parsed request with params
+file: ./test/message_test.gleam
+test_name: parse_request_params_test
+---
+Request(IntId(999999), "get", Some(dict.from_list([#("path", "/posts")])))

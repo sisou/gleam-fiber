@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: encoded notification
+file: ./test/json_rpc_test.gleam
+test_name: encoded_notification_test
+---
+{"jsonrpc":"2.0","method":"heartbeat"}

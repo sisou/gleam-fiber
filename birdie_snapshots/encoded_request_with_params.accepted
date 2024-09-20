@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: encoded request with params
+file: ./test/json_rpc_test.gleam
+test_name: encoded_request_params_test
+---
+{"jsonrpc":"2.0","id":999999,"method":"get","params":{"path":"/posts"}}

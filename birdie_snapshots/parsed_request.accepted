@@ -1,0 +1,7 @@
+---
+version: 1.2.3
+title: parsed request
+file: ./test/message_test.gleam
+test_name: parse_request_test
+---
+Request(IntId(777777), "ping", None)
