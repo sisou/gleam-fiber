@@ -20,61 +20,6 @@ pub type Message(dyn) {
   ErrorResponse(id: Option(RpcId), error: ErrorObject(dyn))
 }
 
-pub fn int_id(id: Int) -> RpcId {
-  IntId(id)
-}
-
-pub fn string_id(id: String) -> RpcId {
-  StringId(id)
-}
-
-pub fn error(
-  id id: RpcId,
-  code code: Int,
-  message message: String,
-) -> Message(Json) {
-  ErrorResponse(id: Some(id), error: ErrorObject(code:, message:, data: None))
-}
-
-pub fn error_with_data(
-  id id: RpcId,
-  code code: Int,
-  message message: String,
-  data data: Json,
-) -> Message(Json) {
-  ErrorResponse(
-    id: Some(id),
-    error: ErrorObject(code:, message:, data: Some(data)),
-  )
-}
-
-pub fn notification(method method: String) -> Message(Json) {
-  Notification(method:, params: None)
-}
-
-pub fn notification_with_params(
-  method method: String,
-  params params: Json,
-) -> Message(Json) {
-  Notification(method:, params: Some(params))
-}
-
-pub fn request(id id: RpcId, method method: String) -> Message(Json) {
-  Request(id:, method:, params: None)
-}
-
-pub fn request_with_params(
-  id id: RpcId,
-  method method: String,
-  params params: Json,
-) -> Message(Json) {
-  Request(id:, method:, params: Some(params))
-}
-
-pub fn response(id id: RpcId, result result: Json) -> Message(Json) {
-  SuccessResponse(id:, result:)
-}
-
 fn id_decoder() {
   dynamic.any([
     fn(data) { dynamic.int(data) |> result.map(IntId) },

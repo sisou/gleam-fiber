@@ -1,62 +1,69 @@
 import birdie
 import gleam/json
+import gleam/option
 import gleam/string
 import gleeunit/should
 import json_rpc/message
 
 pub fn encoded_error_test() {
-  message.string_id("id string")
-  |> message.error(code: 404, message: "Not Found")
+  message.StringId("id string")
+  |> option.Some
+  |> message.ErrorResponse(error: message.ErrorObject(
+    code: 404,
+    message: "Not Found",
+    data: option.None,
+  ))
   |> message.encode
   |> birdie.snap(title: "encoded error")
 }
 
 pub fn encoded_error_data_test() {
-  message.string_id("id string")
-  |> message.error_with_data(
+  message.StringId("id string")
+  |> option.Some
+  |> message.ErrorResponse(error: message.ErrorObject(
     code: -32_700,
     message: "Parse error",
-    data: json.string("Unexpected End of Input"),
-  )
+    data: json.string("Unexpected End of Input") |> option.Some,
+  ))
   |> message.encode
   |> birdie.snap(title: "encoded error with data")
 }
 
 pub fn encoded_notification_test() {
-  message.notification(method: "heartbeat")
+  message.Notification(method: "heartbeat", params: option.None)
   |> message.encode
   |> birdie.snap(title: "encoded notification")
 }
 
 pub fn encoded_notification_params_test() {
-  message.notification_with_params(
+  message.Notification(
     method: "progress",
-    params: json.object([#("complete", json.float(0.5))]),
+    params: json.object([#("complete", json.float(0.5))]) |> option.Some,
   )
   |> message.encode
   |> birdie.snap(title: "encoded notification with params")
 }
 
 pub fn encoded_request_test() {
-  message.int_id(777_777)
-  |> message.request(method: "ping")
+  message.IntId(777_777)
+  |> message.Request(method: "ping", params: option.None)
   |> message.encode
   |> birdie.snap(title: "encoded request")
 }
 
 pub fn encoded_request_params_test() {
-  message.int_id(999_999)
-  |> message.request_with_params(
+  message.IntId(999_999)
+  |> message.Request(
     method: "get",
-    params: json.object([#("path", json.string("/posts"))]),
+    params: json.object([#("path", json.string("/posts"))]) |> option.Some,
   )
   |> message.encode
   |> birdie.snap(title: "encoded request with params")
 }
 
 pub fn encoded_response_test() {
-  message.int_id(777_777)
-  |> message.response(result: json.string("pong"))
+  message.IntId(777_777)
+  |> message.SuccessResponse(result: json.string("pong"))
   |> message.encode
   |> birdie.snap(title: "encoded response")
 }
