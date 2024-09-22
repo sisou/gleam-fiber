@@ -4,7 +4,6 @@ gleam = ">= 1.5.0"
 description = "JSON-RPC utilities for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "drowrin", repo = "json_rpc" }
-internal_modules = ["json_rpc/message"]
 
 [dependencies]
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
