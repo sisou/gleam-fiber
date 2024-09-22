@@ -1,6 +1,7 @@
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
+import gleam/function
 import gleam/io
 import gleam/json.{type Json}
 import gleam/list
@@ -12,6 +13,17 @@ import gleam/string
 
 import fiber
 import fiber/message
+
+pub fn selector(
+  send_back: process.Subject(process.Subject(fiber.RpcMessage)),
+) -> process.Selector(fiber.RpcMessage) {
+  let subject = process.new_subject()
+
+  process.send(send_back, subject)
+
+  process.new_selector()
+  |> process.selecting(subject, function.identity)
+}
 
 fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
   case result {
