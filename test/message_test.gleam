@@ -6,65 +6,68 @@ import gleeunit/should
 import json_rpc/message
 
 pub fn encoded_error_test() {
-  message.StringId("id string")
-  |> option.Some
-  |> message.ErrorResponse(error: message.ErrorData(
-    code: 404,
-    message: "Not Found",
-    data: option.None,
-  ))
-  |> message.encode
+  message.ErrorData(code: 404, message: "Not Found", data: option.None)
+  |> message.ErrorResponse(id: message.StringId("id string"), error: _)
+  |> message.ResponseMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded error")
 }
 
 pub fn encoded_error_data_test() {
-  message.StringId("id string")
+  json.string("Unexpected End of Input")
   |> option.Some
-  |> message.ErrorResponse(error: message.ErrorData(
-    code: -32_700,
-    message: "Parse error",
-    data: json.string("Unexpected End of Input") |> option.Some,
-  ))
-  |> message.encode
+  |> message.ErrorData(code: -32_700, message: "Parse error", data: _)
+  |> message.ErrorResponse(id: message.StringId("id string"), error: _)
+  |> message.ResponseMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded error with data")
 }
 
 pub fn encoded_notification_test() {
   message.Notification(method: "heartbeat", params: option.None)
-  |> message.encode
+  |> message.RequestMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded notification")
 }
 
 pub fn encoded_notification_params_test() {
-  message.Notification(
-    method: "progress",
-    params: json.object([#("complete", json.float(0.5))]) |> option.Some,
-  )
-  |> message.encode
+  json.object([#("complete", json.float(0.5))])
+  |> option.Some
+  |> message.Notification(method: "progress")
+  |> message.RequestMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded notification with params")
 }
 
 pub fn encoded_request_test() {
   message.IntId(777_777)
   |> message.Request(method: "ping", params: option.None)
-  |> message.encode
+  |> message.RequestMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded request")
 }
 
 pub fn encoded_request_params_test() {
-  message.IntId(999_999)
-  |> message.Request(
-    method: "get",
-    params: json.object([#("path", json.string("/posts"))]) |> option.Some,
-  )
-  |> message.encode
+  json.object([#("path", json.string("/posts"))])
+  |> option.Some
+  |> message.Request(id: message.IntId(999_999), method: "get")
+  |> message.RequestMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded request with params")
 }
 
 pub fn encoded_response_test() {
-  message.IntId(777_777)
-  |> message.SuccessResponse(result: json.string("pong"))
-  |> message.encode
+  json.string("pong")
+  |> message.SuccessResponse(id: message.IntId(777_777))
+  |> message.ResponseMessage
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "encoded response")
 }
 
@@ -128,7 +131,9 @@ pub fn invalid_message_test() {
   "{\"nonsense\":\"data\"}"
   |> message.decode
   |> should.be_error
-  |> message.encode
+  |> message.json_decode_error_message
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "invalid request error message")
 }
 
@@ -136,7 +141,9 @@ pub fn unexpected_byte_test() {
   "⭐"
   |> message.decode
   |> should.be_error
-  |> message.encode
+  |> message.json_decode_error_message
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "unexpected byte error message")
 }
 
@@ -144,7 +151,9 @@ pub fn unexpected_end_of_input_test() {
   "{\"method\": \"heartbe--"
   |> message.decode
   |> should.be_error
-  |> message.encode
+  |> message.json_decode_error_message
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "unexpected end of input error message")
 }
 
@@ -152,6 +161,8 @@ pub fn unexpected_sequence_test() {
   "\"\\uxxxx\""
   |> message.decode
   |> should.be_error
-  |> message.encode
+  |> message.json_decode_error_message
+  |> message.to_json
+  |> json.to_string
   |> birdie.snap(title: "unexpected sequence error message")
 }

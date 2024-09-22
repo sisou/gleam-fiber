@@ -4,4 +4,4 @@ title: prased error
 file: ./test/message_test.gleam
 test_name: parse_error_test
 ---
-ErrorResponse(Some(StringId("id string")), ErrorData(404, "Not Found", None))
+ResponseMessage(ErrorResponse(ErrorData(None, 404, "Not Found"), StringId("id string")))

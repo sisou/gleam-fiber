@@ -1,6 +1,6 @@
 import gleam/dynamic.{type Dynamic}
 import gleam/json.{type Json}
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
 import gleam/pair
 import gleam/result
 
@@ -10,15 +10,26 @@ pub type RpcId {
 }
 
 pub type ErrorData(dyn) {
-  ErrorData(code: Int, message: String, data: Option(dyn))
+  ErrorData(data: Option(dyn), code: Int, message: String)
   ErrorString(String)
 }
 
+pub type Request(dyn) {
+  Request(params: Option(dyn), method: String, id: RpcId)
+  Notification(params: Option(dyn), method: String)
+}
+
+pub type Response(dyn) {
+  SuccessResponse(result: dyn, id: RpcId)
+  ErrorResponse(error: ErrorData(dyn), id: RpcId)
+}
+
 pub type Message(dyn) {
-  Notification(method: String, params: Option(dyn))
-  Request(id: RpcId, method: String, params: Option(dyn))
-  SuccessResponse(id: RpcId, result: dyn)
-  ErrorResponse(id: Option(RpcId), error: ErrorData(dyn))
+  RequestMessage(Request(dyn))
+  ResponseMessage(Response(dyn))
+  ErrorMessage(ErrorData(dyn))
+  BatchRequestMessage(List(Request(dyn)))
+  BatchResponseMessage(List(Response(dyn)))
 }
 
 fn id_decoder() {
@@ -28,99 +39,84 @@ fn id_decoder() {
   ])
 }
 
-fn error_decoder() {
+fn error_data_decoder() {
   dynamic.any([
     fn(v) { dynamic.string(v) |> result.map(ErrorString) },
     dynamic.decode3(
       ErrorData,
+      dynamic.optional_field("data", dynamic.dynamic),
       dynamic.field("code", dynamic.int),
       dynamic.field("message", dynamic.string),
-      dynamic.optional_field("data", dynamic.dynamic),
     ),
   ])
 }
 
-fn notification_decoder() {
-  dynamic.decode2(
-    Notification,
-    dynamic.field("method", dynamic.string),
-    dynamic.optional_field("params", dynamic.dynamic),
-  )
-}
-
 fn request_decoder() {
-  dynamic.decode3(
-    Request,
-    dynamic.field("id", id_decoder()),
-    dynamic.field("method", dynamic.string),
-    dynamic.optional_field("params", dynamic.dynamic),
-  )
+  dynamic.any([
+    dynamic.decode3(
+      Request,
+      dynamic.optional_field("params", dynamic.dynamic),
+      dynamic.field("method", dynamic.string),
+      dynamic.field("id", id_decoder()),
+    ),
+    dynamic.decode2(
+      Notification,
+      dynamic.optional_field("params", dynamic.dynamic),
+      dynamic.field("method", dynamic.string),
+    ),
+  ])
 }
 
-fn success_response_decoder() {
-  dynamic.decode2(
-    SuccessResponse,
-    dynamic.field("id", id_decoder()),
-    dynamic.field("result", dynamic.dynamic),
-  )
+fn response_decoder() {
+  dynamic.any([
+    dynamic.decode2(
+      SuccessResponse,
+      dynamic.field("result", dynamic.dynamic),
+      dynamic.field("id", id_decoder()),
+    ),
+    dynamic.decode2(
+      ErrorResponse,
+      dynamic.field("error", error_data_decoder()),
+      dynamic.field("id", id_decoder()),
+    ),
+  ])
 }
 
-fn error_response_decoder() {
-  dynamic.decode2(
-    ErrorResponse,
-    dynamic.field("id", dynamic.optional(id_decoder())),
-    dynamic.field("error", error_decoder()),
-  )
+fn error_decoder() {
+  dynamic.field("error", error_data_decoder())
 }
 
-fn parse_or_format_error_message(error) {
-  case error {
-    json.UnexpectedFormat(_) ->
-      ErrorResponse(
-        error: ErrorData(code: -32_600, message: "Invalid Request", data: None),
-        id: None,
-      )
-    json.UnexpectedByte(byte) ->
-      ErrorResponse(
-        error: ErrorData(
-          code: -32_700,
-          message: "Parse error",
-          data: Some(json.string("Unexpected Byte: \"" <> byte <> "\"")),
-        ),
-        id: None,
-      )
-    json.UnexpectedEndOfInput ->
-      ErrorResponse(
-        error: ErrorData(
-          code: -32_700,
-          message: "Parse error",
-          data: Some(json.string("Unexpected End of Input")),
-        ),
-        id: None,
-      )
-    json.UnexpectedSequence(sequence) ->
-      ErrorResponse(
-        error: ErrorData(
-          code: -32_700,
-          message: "Parse error",
-          data: Some(json.string("Unexpected Sequence: \"" <> sequence <> "\"")),
-        ),
-        id: None,
-      )
-  }
+fn message_decoder() {
+  dynamic.any([
+    fn(d) {
+      response_decoder()(d)
+      |> result.map(ResponseMessage)
+    },
+    fn(d) {
+      request_decoder()(d)
+      |> result.map(RequestMessage)
+    },
+    fn(d) {
+      error_decoder()(d)
+      |> result.map(ErrorMessage)
+    },
+    fn(d) {
+      dynamic.list(request_decoder())(d)
+      |> result.map(BatchRequestMessage)
+    },
+    fn(d) {
+      dynamic.list(response_decoder())(d)
+      |> result.map(BatchResponseMessage)
+    },
+  ])
 }
 
-pub fn decode(text: String) -> Result(Message(Dynamic), Message(Json)) {
-  let message_decoder =
-    dynamic.any([
-      request_decoder(),
-      notification_decoder(),
-      success_response_decoder(),
-      error_response_decoder(),
-    ])
+pub fn decode(text: String) -> Result(Message(Dynamic), json.DecodeError) {
+  json.decode(text, message_decoder())
+}
 
-  json.decode(text, message_decoder)
-  |> result.map_error(parse_or_format_error_message)
+pub fn from_json(text: String) -> Result(Message(Dynamic), json.DecodeError) {
+  decode(text)
 }
 
 fn encode_id(id: RpcId) {
@@ -130,9 +126,25 @@ fn encode_id(id: RpcId) {
   }
 }
 
-pub fn encode(message: Message(Json)) -> String {
-  case message {
-    Notification(method, params) ->
+fn encode_error_data(error: ErrorData(Json)) {
+  case error {
+    ErrorData(data, code, message) ->
+      json.object(
+        result.values([
+          #("code", json.int(code)) |> Ok,
+          #("message", json.string(message)) |> Ok,
+          data
+            |> option.map(pair.new("data", _))
+            |> option.to_result(Nil),
+        ]),
+      )
+    ErrorString(s) -> json.string(s)
+  }
+}
+
+fn encode_request(request: Request(Json)) {
+  case request {
+    Notification(params, method) ->
       json.object(
         result.values([
           #("jsonrpc", json.string("2.0")) |> Ok,
@@ -140,7 +152,7 @@ pub fn encode(message: Message(Json)) -> String {
           option.map(params, pair.new("params", _)) |> option.to_result(Nil),
         ]),
       )
-    Request(id, method, params) ->
+    Request(params, method, id) ->
       json.object(
         result.values([
           #("jsonrpc", json.string("2.0")) |> Ok,
@@ -149,30 +161,73 @@ pub fn encode(message: Message(Json)) -> String {
           params |> option.map(pair.new("params", _)) |> option.to_result(Nil),
         ]),
       )
-    SuccessResponse(id, result) ->
+  }
+}
+
+fn encode_response(response: Response(Json)) {
+  case response {
+    ErrorResponse(error, id) ->
+      json.object([
+        #("jsonrpc", json.string("2.0")),
+        #("id", encode_id(id)),
+        #("error", encode_error_data(error)),
+      ])
+    SuccessResponse(result, id) ->
       json.object([
         #("jsonrpc", json.string("2.0")),
         #("id", encode_id(id)),
         #("result", result),
       ])
-    ErrorResponse(id, error) ->
-      json.object([
-        #("jsonrpc", json.string("2.0")),
-        #("id", json.nullable(id, encode_id)),
-        #("error", case error {
-          ErrorData(code, message, data) ->
-            json.object(
-              result.values([
-                #("code", json.int(code)) |> Ok,
-                #("message", json.string(message)) |> Ok,
-                data
-                  |> option.map(pair.new("data", _))
-                  |> option.to_result(Nil),
-              ]),
-            )
-          ErrorString(s) -> json.string(s)
-        }),
-      ])
   }
-  |> json.to_string
+}
+
+fn encode_error(error: ErrorData(Json)) {
+  json.object([
+    #("jsonrpc", json.string("2.0")),
+    #("id", json.null()),
+    #("error", encode_error_data(error)),
+  ])
+}
+
+pub fn encode(message: Message(Json)) -> Json {
+  case message {
+    BatchRequestMessage(batch) -> batch |> json.array(encode_request)
+    BatchResponseMessage(batch) -> batch |> json.array(encode_response)
+    ErrorMessage(error) -> encode_error(error)
+    RequestMessage(request) -> encode_request(request)
+    ResponseMessage(response) -> encode_response(response)
+  }
+}
+
+pub fn to_json(message: Message(Json)) -> Json {
+  encode(message)
+}
+
+pub fn json_decode_error_message(error) {
+  case error {
+    json.UnexpectedFormat(_) ->
+      ErrorData(code: -32_600, message: "Invalid Request", data: option.None)
+    json.UnexpectedByte(byte) ->
+      ErrorData(
+        code: -32_700,
+        message: "Parse error",
+        data: option.Some(json.string("Unexpected Byte: \"" <> byte <> "\"")),
+      )
+
+    json.UnexpectedEndOfInput ->
+      ErrorData(
+        code: -32_700,
+        message: "Parse error",
+        data: option.Some(json.string("Unexpected End of Input")),
+      )
+    json.UnexpectedSequence(sequence) ->
+      ErrorData(
+        code: -32_700,
+        message: "Parse error",
+        data: option.Some(json.string(
+          "Unexpected Sequence: \"" <> sequence <> "\"",
+        )),
+      )
+  }
+  |> ErrorMessage
 }

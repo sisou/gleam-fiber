@@ -4,4 +4,4 @@ title: parsed response
 file: ./test/message_test.gleam
 test_name: parse_response_test
 ---
-SuccessResponse(IntId(777777), "pong")
+ResponseMessage(SuccessResponse("pong", IntId(777777)))

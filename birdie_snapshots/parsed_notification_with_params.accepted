@@ -4,4 +4,4 @@ title: parsed notification with params
 file: ./test/message_test.gleam
 test_name: parse_notification_params_test
 ---
-Notification("progress", Some(dict.from_list([#("complete", 0.5)])))
+RequestMessage(Notification(Some(dict.from_list([#("complete", 0.5)])), "progress"))

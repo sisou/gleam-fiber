@@ -4,4 +4,4 @@ title: parsed notification
 file: ./test/message_test.gleam
 test_name: parse_notification_test
 ---
-Notification("heartbeat", None)
+RequestMessage(Notification(None, "heartbeat"))
