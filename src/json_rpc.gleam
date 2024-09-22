@@ -21,32 +21,34 @@ fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
 }
 
 pub fn handle_text(
-  rpc rpc: RpcConnection(a),
+  rpc: RpcConnection(a, b),
+  conn: a,
   message text: String,
-) -> actor.Next(RpcMessage, RpcConnection(a)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   case message.decode(text) {
     Error(error) -> {
       message.json_decode_error_message(error)
       |> message.encode
       |> json.to_string
-      |> rpc.send
+      |> rpc.send(conn, _)
       |> stop_on_error(rpc)
     }
-    Ok(message) -> handle_message(rpc, message)
+    Ok(message) -> handle_message(rpc, conn, message)
   }
 }
 
 pub fn handle_rpc_message(
-  rpc rpc: RpcConnection(a),
+  rpc: RpcConnection(a, b),
+  conn: a,
   message rpc_message: RpcMessage,
-) -> actor.Next(RpcMessage, RpcConnection(a)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   case rpc_message {
     RpcRequest(method, params, id, reply_subject) -> {
       message.Request(params, method, id)
       |> message.RequestMessage
       |> message.encode
       |> json.to_string
-      |> rpc.send
+      |> rpc.send(conn, _)
       |> stop_on_error(rpc |> add_waiting(id, reply_subject))
     }
     RpcNotification(method, params) -> {
@@ -54,14 +56,14 @@ pub fn handle_rpc_message(
       |> message.RequestMessage
       |> message.encode
       |> json.to_string
-      |> rpc.send
+      |> rpc.send(conn, _)
       |> stop_on_error(rpc)
     }
     RpcBatch(batch, ids, reply_subject) -> {
       message.BatchRequestMessage(batch)
       |> message.encode
       |> json.to_string
-      |> rpc.send
+      |> rpc.send(conn, _)
       |> stop_on_error(rpc |> add_waiting_batch(ids, reply_subject))
     }
     RpcRemoveWaiting(id) -> actor.continue(rpc |> remove_waiting(id))
@@ -72,9 +74,10 @@ pub fn handle_rpc_message(
 }
 
 pub fn handle_binary(
-  rpc rpc: RpcConnection(a),
+  rpc: RpcConnection(a, b),
+  conn: a,
   message _binary: BitArray,
-) -> actor.Next(RpcMessage, RpcConnection(a)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   message.ErrorData(
     code: -32_700,
     message: "Parse error",
@@ -83,7 +86,7 @@ pub fn handle_binary(
   |> message.ErrorMessage
   |> message.encode
   |> json.to_string
-  |> rpc.send
+  |> rpc.send(conn, _)
   |> stop_on_error(rpc)
 }
 
@@ -114,7 +117,7 @@ fn handle_request_callback_result(
 }
 
 fn process_request(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(conn, send_error),
   request: message.Request(Dynamic),
 ) -> Result(message.Response(Json), Nil) {
   case request {
@@ -153,9 +156,10 @@ fn process_request(
 }
 
 fn handle_request(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(a, b),
+  conn: a,
   request: message.Request(Dynamic),
-) -> actor.Next(RpcMessage, RpcConnection(send_error)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   case process_request(rpc, request) {
     Error(Nil) -> actor.continue(rpc)
     Ok(response) ->
@@ -163,15 +167,16 @@ fn handle_request(
       |> message.ResponseMessage
       |> message.encode
       |> json.to_string
-      |> rpc.send
+      |> rpc.send(conn, _)
       |> stop_on_error(rpc)
   }
 }
 
 fn handle_response(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(a, b),
+  _conn: a,
   response: message.Response(Dynamic),
-) -> actor.Next(RpcMessage, RpcConnection(send_error)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   case response {
     message.ErrorResponse(error, id) ->
       case rpc.waiting |> dict.get(id) {
@@ -215,23 +220,25 @@ fn handle_response(
 }
 
 fn handle_batch_request(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(a, b),
+  conn: a,
   batch: List(message.Request(Dynamic)),
-) -> actor.Next(RpcMessage, RpcConnection(send_error)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   batch
   |> list.map(process_request(rpc, _))
   |> result.values
   |> message.BatchResponseMessage
   |> message.encode
   |> json.to_string
-  |> rpc.send
+  |> rpc.send(conn, _)
   |> stop_on_error(rpc)
 }
 
 fn handle_batch_response(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(a, b),
+  _conn: a,
   batch: List(message.Response(Dynamic)),
-) -> actor.Next(RpcMessage, RpcConnection(send_error)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   let ids =
     batch
     |> list.map(fn(response) {
@@ -269,14 +276,16 @@ fn handle_batch_response(
 }
 
 fn handle_message(
-  rpc: RpcConnection(send_error),
+  rpc: RpcConnection(a, b),
+  conn: a,
   message json_rpc_message: message.Message(Dynamic),
-) -> actor.Next(RpcMessage, RpcConnection(send_error)) {
+) -> actor.Next(RpcMessage, RpcConnection(a, b)) {
   case json_rpc_message {
-    message.BatchRequestMessage(batch) -> handle_batch_request(rpc, batch)
-    message.BatchResponseMessage(batch) -> handle_batch_response(rpc, batch)
-    message.RequestMessage(request) -> handle_request(rpc, request)
-    message.ResponseMessage(response) -> handle_response(rpc, response)
+    message.BatchRequestMessage(batch) -> handle_batch_request(rpc, conn, batch)
+    message.BatchResponseMessage(batch) ->
+      handle_batch_response(rpc, conn, batch)
+    message.RequestMessage(request) -> handle_request(rpc, conn, request)
+    message.ResponseMessage(response) -> handle_response(rpc, conn, response)
     message.ErrorMessage(error) -> {
       // we can't reply to this according to the spec, so just log an error
       io.println_error(
@@ -321,8 +330,8 @@ pub type RpcMessage {
   Close
 }
 
-type SendFunction(send_error) =
-  fn(String) -> Result(Nil, send_error)
+type SendFunction(conn, send_error) =
+  fn(conn, String) -> Result(Nil, send_error)
 
 pub opaque type RpcBuilder {
   RpcBuilder(
@@ -359,8 +368,8 @@ pub fn on_notification(
 
 pub fn bind(
   builder builder: RpcBuilder,
-  send send: SendFunction(a),
-) -> RpcConnection(a) {
+  send send: SendFunction(a, b),
+) -> RpcConnection(a, b) {
   RpcConnection(
     send:,
     methods: builder.methods,
@@ -370,9 +379,9 @@ pub fn bind(
   )
 }
 
-pub opaque type RpcConnection(send_error) {
+pub opaque type RpcConnection(conn, send_error) {
   RpcConnection(
-    send: SendFunction(send_error),
+    send: SendFunction(conn, send_error),
     methods: Dict(String, RequestCallback),
     notifications: Dict(String, NotificationCallback),
     waiting: Dict(
@@ -389,10 +398,10 @@ pub opaque type RpcConnection(send_error) {
 }
 
 fn add_waiting(
-  connection: RpcConnection(a),
+  connection: RpcConnection(a, b),
   id: message.RpcId,
   reply: process.Subject(Result(Dynamic, message.ErrorData(Dynamic))),
-) -> RpcConnection(a) {
+) -> RpcConnection(a, b) {
   RpcConnection(
     ..connection,
     waiting: connection.waiting |> dict.insert(id, reply),
@@ -400,12 +409,12 @@ fn add_waiting(
 }
 
 fn add_waiting_batch(
-  connection: RpcConnection(a),
+  connection: RpcConnection(a, b),
   ids: set.Set(message.RpcId),
   reply: process.Subject(
     Dict(message.RpcId, Result(Dynamic, message.ErrorData(Dynamic))),
   ),
-) -> RpcConnection(a) {
+) -> RpcConnection(a, b) {
   RpcConnection(
     ..connection,
     waiting_batches: connection.waiting_batches |> dict.insert(ids, reply),
@@ -413,16 +422,16 @@ fn add_waiting_batch(
 }
 
 fn remove_waiting(
-  connection: RpcConnection(a),
+  connection: RpcConnection(a, b),
   id: message.RpcId,
-) -> RpcConnection(a) {
+) -> RpcConnection(a, b) {
   RpcConnection(..connection, waiting: connection.waiting |> dict.delete(id))
 }
 
 fn remove_waiting_batch(
-  connection: RpcConnection(a),
+  connection: RpcConnection(a, b),
   ids: set.Set(message.RpcId),
-) -> RpcConnection(a) {
+) -> RpcConnection(a, b) {
   RpcConnection(
     ..connection,
     waiting_batches: connection.waiting_batches |> dict.delete(ids),
