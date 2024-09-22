@@ -333,52 +333,6 @@ pub type RpcMessage {
 type SendFunction(conn, send_error) =
   fn(conn, String) -> Result(Nil, send_error)
 
-pub opaque type RpcBuilder {
-  RpcBuilder(
-    methods: Dict(String, RequestCallback),
-    notifications: Dict(String, NotificationCallback),
-  )
-}
-
-pub fn rpc_builder() {
-  RpcBuilder(methods: dict.new(), notifications: dict.new())
-}
-
-pub fn add_method(
-  builder builder: RpcBuilder,
-  method method: String,
-  callback callback: RequestCallback,
-) -> RpcBuilder {
-  RpcBuilder(
-    ..builder,
-    methods: builder.methods |> dict.insert(method, callback),
-  )
-}
-
-pub fn on_notification(
-  builder builder: RpcBuilder,
-  method method: String,
-  callback callback: NotificationCallback,
-) -> RpcBuilder {
-  RpcBuilder(
-    ..builder,
-    notifications: builder.notifications |> dict.insert(method, callback),
-  )
-}
-
-pub fn bind(
-  builder builder: RpcBuilder,
-  send send: SendFunction(a, b),
-) -> RpcConnection(a, b) {
-  RpcConnection(
-    send:,
-    methods: builder.methods,
-    notifications: builder.notifications,
-    waiting: dict.new(),
-    waiting_batches: dict.new(),
-  )
-}
-
 pub opaque type RpcConnection(conn, send_error) {
   RpcConnection(
     send: SendFunction(conn, send_error),
@@ -394,6 +348,38 @@ pub opaque type RpcConnection(conn, send_error) {
         Dict(message.RpcId, Result(Dynamic, message.ErrorData(Dynamic))),
       ),
     ),
+  )
+}
+
+pub fn new(send send_function: SendFunction(a, b)) -> RpcConnection(a, b) {
+  RpcConnection(
+    methods: dict.new(),
+    notifications: dict.new(),
+    send: send_function,
+    waiting: dict.new(),
+    waiting_batches: dict.new(),
+  )
+}
+
+pub fn add_method(
+  builder builder: RpcConnection(a, b),
+  method method: String,
+  callback callback: RequestCallback,
+) -> RpcConnection(a, b) {
+  RpcConnection(
+    ..builder,
+    methods: builder.methods |> dict.insert(method, callback),
+  )
+}
+
+pub fn on_notification(
+  builder builder: RpcConnection(a, b),
+  method method: String,
+  callback callback: NotificationCallback,
+) -> RpcConnection(a, b) {
+  RpcConnection(
+    ..builder,
+    notifications: builder.notifications |> dict.insert(method, callback),
   )
 }
 
