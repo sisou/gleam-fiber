@@ -4,4 +4,4 @@ title: invalid request error message
 file: ./test/message_test.gleam
 test_name: invalid_message_test
 ---
-{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request"}}
+UnexpectedFormat([DecodeError("another type", "Dict", [])])

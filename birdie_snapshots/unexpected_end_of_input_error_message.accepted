@@ -4,4 +4,4 @@ title: unexpected end of input error message
 file: ./test/message_test.gleam
 test_name: unexpected_end_of_input_test
 ---
-{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error","data":"Unexpected End of Input"}}
+UnexpectedEndOfInput

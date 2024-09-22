@@ -131,9 +131,7 @@ pub fn invalid_message_test() {
   "{\"nonsense\":\"data\"}"
   |> message.decode
   |> should.be_error
-  |> message.json_decode_error_message
-  |> message.to_json
-  |> json.to_string
+  |> string.inspect
   |> birdie.snap(title: "invalid request error message")
 }
 
@@ -141,9 +139,7 @@ pub fn unexpected_byte_test() {
   "⭐"
   |> message.decode
   |> should.be_error
-  |> message.json_decode_error_message
-  |> message.to_json
-  |> json.to_string
+  |> string.inspect
   |> birdie.snap(title: "unexpected byte error message")
 }
 
@@ -151,9 +147,7 @@ pub fn unexpected_end_of_input_test() {
   "{\"method\": \"heartbe--"
   |> message.decode
   |> should.be_error
-  |> message.json_decode_error_message
-  |> message.to_json
-  |> json.to_string
+  |> string.inspect
   |> birdie.snap(title: "unexpected end of input error message")
 }
 
@@ -161,8 +155,6 @@ pub fn unexpected_sequence_test() {
   "\"\\uxxxx\""
   |> message.decode
   |> should.be_error
-  |> message.json_decode_error_message
-  |> message.to_json
-  |> json.to_string
+  |> string.inspect
   |> birdie.snap(title: "unexpected sequence error message")
 }

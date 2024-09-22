@@ -4,7 +4,7 @@ import gleam/option.{type Option}
 import gleam/pair
 import gleam/result
 
-pub type RpcId {
+pub type Id {
   IntId(Int)
   StringId(String)
 }
@@ -15,13 +15,13 @@ pub type ErrorData(dyn) {
 }
 
 pub type Request(dyn) {
-  Request(params: Option(dyn), method: String, id: RpcId)
+  Request(params: Option(dyn), method: String, id: Id)
   Notification(params: Option(dyn), method: String)
 }
 
 pub type Response(dyn) {
-  SuccessResponse(result: dyn, id: RpcId)
-  ErrorResponse(error: ErrorData(dyn), id: RpcId)
+  SuccessResponse(result: dyn, id: Id)
+  ErrorResponse(error: ErrorData(dyn), id: Id)
 }
 
 pub type Message(dyn) {
@@ -119,7 +119,7 @@ pub fn from_json(text: String) -> Result(Message(Dynamic), json.DecodeError) {
   decode(text)
 }
 
-fn encode_id(id: RpcId) {
+fn encode_id(id: Id) {
   case id {
     IntId(i) -> json.int(i)
     StringId(s) -> json.string(s)
@@ -201,33 +201,4 @@ pub fn encode(message: Message(Json)) -> Json {
 
 pub fn to_json(message: Message(Json)) -> Json {
   encode(message)
-}
-
-pub fn json_decode_error_message(error) {
-  case error {
-    json.UnexpectedFormat(_) ->
-      ErrorData(code: -32_600, message: "Invalid Request", data: option.None)
-    json.UnexpectedByte(byte) ->
-      ErrorData(
-        code: -32_700,
-        message: "Parse error",
-        data: option.Some(json.string("Unexpected Byte: \"" <> byte <> "\"")),
-      )
-
-    json.UnexpectedEndOfInput ->
-      ErrorData(
-        code: -32_700,
-        message: "Parse error",
-        data: option.Some(json.string("Unexpected End of Input")),
-      )
-    json.UnexpectedSequence(sequence) ->
-      ErrorData(
-        code: -32_700,
-        message: "Parse error",
-        data: option.Some(json.string(
-          "Unexpected Sequence: \"" <> sequence <> "\"",
-        )),
-      )
-  }
-  |> ErrorMessage
 }
