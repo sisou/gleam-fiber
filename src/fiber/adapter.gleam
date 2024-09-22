@@ -10,8 +10,8 @@ import gleam/result
 import gleam/set
 import gleam/string
 
-import json_rpc
-import json_rpc/message
+import fiber
+import fiber/message
 
 fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
   case result {
@@ -21,54 +21,54 @@ fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
 }
 
 fn add_waiting(
-  connection: json_rpc.RpcConnection(a, b),
+  connection: fiber.RpcConnection(a, b),
   id: message.Id,
   reply: process.Subject(Result(Dynamic, message.ErrorData(Dynamic))),
-) -> json_rpc.RpcConnection(a, b) {
-  json_rpc.RpcConnection(
+) -> fiber.RpcConnection(a, b) {
+  fiber.RpcConnection(
     ..connection,
     waiting: connection.waiting |> dict.insert(id, reply),
   )
 }
 
 fn add_waiting_batch(
-  connection: json_rpc.RpcConnection(a, b),
+  connection: fiber.RpcConnection(a, b),
   ids: set.Set(message.Id),
   reply: process.Subject(
     Dict(message.Id, Result(Dynamic, message.ErrorData(Dynamic))),
   ),
-) -> json_rpc.RpcConnection(a, b) {
-  json_rpc.RpcConnection(
+) -> fiber.RpcConnection(a, b) {
+  fiber.RpcConnection(
     ..connection,
     waiting_batches: connection.waiting_batches |> dict.insert(ids, reply),
   )
 }
 
 fn remove_waiting(
-  connection: json_rpc.RpcConnection(a, b),
+  connection: fiber.RpcConnection(a, b),
   id: message.Id,
-) -> json_rpc.RpcConnection(a, b) {
-  json_rpc.RpcConnection(
+) -> fiber.RpcConnection(a, b) {
+  fiber.RpcConnection(
     ..connection,
     waiting: connection.waiting |> dict.delete(id),
   )
 }
 
 fn remove_waiting_batch(
-  connection: json_rpc.RpcConnection(a, b),
+  connection: fiber.RpcConnection(a, b),
   ids: set.Set(message.Id),
-) -> json_rpc.RpcConnection(a, b) {
-  json_rpc.RpcConnection(
+) -> fiber.RpcConnection(a, b) {
+  fiber.RpcConnection(
     ..connection,
     waiting_batches: connection.waiting_batches |> dict.delete(ids),
   )
 }
 
 pub fn handle_text(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
   message text: String,
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   case message.decode(text) {
     Error(error) -> {
       case error {
@@ -111,12 +111,12 @@ pub fn handle_text(
 }
 
 pub fn handle_rpc_message(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
-  message rpc_message: json_rpc.RpcMessage,
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+  message rpc_message: fiber.RpcMessage,
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   case rpc_message {
-    json_rpc.RpcRequest(method, params, id, reply_subject) -> {
+    fiber.RpcRequest(method, params, id, reply_subject) -> {
       message.Request(params, method, id)
       |> message.RequestMessage
       |> message.encode
@@ -124,7 +124,7 @@ pub fn handle_rpc_message(
       |> rpc.send(conn, _)
       |> stop_on_error(rpc |> add_waiting(id, reply_subject))
     }
-    json_rpc.RpcNotification(method, params) -> {
+    fiber.RpcNotification(method, params) -> {
       message.Notification(params, method)
       |> message.RequestMessage
       |> message.encode
@@ -132,7 +132,7 @@ pub fn handle_rpc_message(
       |> rpc.send(conn, _)
       |> stop_on_error(rpc)
     }
-    json_rpc.RpcBatch(batch, ids, reply_subject) -> {
+    fiber.RpcBatch(batch, ids, reply_subject) -> {
       batch
       |> list.map(fn(request) {
         let #(method, params, id) = request
@@ -147,18 +147,18 @@ pub fn handle_rpc_message(
       |> rpc.send(conn, _)
       |> stop_on_error(rpc |> add_waiting_batch(ids, reply_subject))
     }
-    json_rpc.RpcRemoveWaiting(id) -> actor.continue(rpc |> remove_waiting(id))
-    json_rpc.RpcRemoveWaitingBatch(ids) ->
+    fiber.RpcRemoveWaiting(id) -> actor.continue(rpc |> remove_waiting(id))
+    fiber.RpcRemoveWaitingBatch(ids) ->
       actor.continue(rpc |> remove_waiting_batch(ids))
-    json_rpc.Close -> actor.Stop(process.Normal)
+    fiber.Close -> actor.Stop(process.Normal)
   }
 }
 
 pub fn handle_binary(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
   message _binary: BitArray,
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   message.ErrorData(
     code: -32_700,
     message: "Parse error",
@@ -172,21 +172,21 @@ pub fn handle_binary(
 }
 
 fn handle_request_callback_result(
-  result: Result(Json, json_rpc.RpcError),
+  result: Result(Json, fiber.RpcError),
   id: message.Id,
 ) -> message.Response(Json) {
   case result {
-    Error(json_rpc.InvalidParams) -> {
+    Error(fiber.InvalidParams) -> {
       option.None
       |> message.ErrorData(code: -32_602, message: "Invalid params")
       |> message.ErrorResponse(id:)
     }
-    Error(json_rpc.InternalError) -> {
+    Error(fiber.InternalError) -> {
       option.None
       |> message.ErrorData(code: -32_603, message: "Internal error")
       |> message.ErrorResponse(id:)
     }
-    Error(json_rpc.CustomError(error)) -> {
+    Error(fiber.CustomError(error)) -> {
       error
       |> message.ErrorResponse(id:)
     }
@@ -198,7 +198,7 @@ fn handle_request_callback_result(
 }
 
 fn process_request(
-  rpc: json_rpc.RpcConnection(conn, send_error),
+  rpc: fiber.RpcConnection(conn, send_error),
   request: message.Request(Dynamic),
 ) -> Result(message.Response(Json), Nil) {
   case request {
@@ -237,10 +237,10 @@ fn process_request(
 }
 
 fn handle_request(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
   request: message.Request(Dynamic),
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   case process_request(rpc, request) {
     Error(Nil) -> actor.continue(rpc)
     Ok(response) ->
@@ -254,10 +254,10 @@ fn handle_request(
 }
 
 fn handle_response(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   _conn: a,
   response: message.Response(Dynamic),
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   case response {
     message.ErrorResponse(error, id) ->
       case rpc.waiting |> dict.get(id) {
@@ -301,10 +301,10 @@ fn handle_response(
 }
 
 fn handle_batch_request(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
   batch: List(message.Request(Dynamic)),
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   batch
   |> list.map(process_request(rpc, _))
   |> result.values
@@ -316,10 +316,10 @@ fn handle_batch_request(
 }
 
 fn handle_batch_response(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   _conn: a,
   batch: List(message.Response(Dynamic)),
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
   let ids =
     batch
     |> list.map(fn(response) {
@@ -357,11 +357,11 @@ fn handle_batch_response(
 }
 
 fn handle_message(
-  rpc: json_rpc.RpcConnection(a, b),
+  rpc: fiber.RpcConnection(a, b),
   conn: a,
-  message json_rpc_message: message.Message(Dynamic),
-) -> actor.Next(json_rpc.RpcMessage, json_rpc.RpcConnection(a, b)) {
-  case json_rpc_message {
+  message fiber_message: message.Message(Dynamic),
+) -> actor.Next(fiber.RpcMessage, fiber.RpcConnection(a, b)) {
+  case fiber_message {
     message.BatchRequestMessage(batch) -> handle_batch_request(rpc, conn, batch)
     message.BatchResponseMessage(batch) ->
       handle_batch_response(rpc, conn, batch)

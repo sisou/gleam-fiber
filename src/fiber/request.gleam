@@ -3,7 +3,7 @@ import gleam/json.{type Json}
 import gleam/option.{type Option}
 import youid/uuid
 
-import json_rpc/message
+import fiber/message
 
 pub type Request(return) {
   Request(

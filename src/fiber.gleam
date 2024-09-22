@@ -8,8 +8,8 @@ import gleam/result
 import gleam/set
 import youid/uuid
 
-import json_rpc/message
-import json_rpc/request
+import fiber/message
+import fiber/request
 
 pub type RpcError {
   InvalidParams

@@ -3,7 +3,8 @@ import gleam/json
 import gleam/option
 import gleam/string
 import gleeunit/should
-import json_rpc/message
+
+import fiber/message
 
 pub fn encoded_error_test() {
   message.ErrorData(code: 404, message: "Not Found", data: option.None)
