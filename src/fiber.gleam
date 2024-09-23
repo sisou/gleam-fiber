@@ -178,15 +178,25 @@ pub fn close(rpc_subject: process.Subject(RpcMessage)) {
   |> process.send(Close)
 }
 
-pub fn selector(
-  send_back: process.Subject(process.Subject(RpcMessage)),
-) -> process.Selector(RpcMessage) {
-  let subject = process.new_subject()
+pub fn initialize(
+  establish: fn(fn() -> process.Selector(RpcMessage)) -> Result(anything, error),
+) -> Result(process.Subject(RpcMessage), error) {
+  let send_back = process.new_subject()
 
-  process.send(send_back, subject)
+  let bind_selector = fn() {
+    let subject = process.new_subject()
+
+    process.send(send_back, subject)
+
+    process.new_selector()
+    |> process.selecting(subject, function.identity)
+  }
+
+  use _ <- result.map(establish(bind_selector))
 
   process.new_selector()
-  |> process.selecting(subject, function.identity)
+  |> process.selecting(send_back, function.identity)
+  |> process.select_forever
 }
 
 fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
