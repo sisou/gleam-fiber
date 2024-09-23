@@ -11,6 +11,9 @@ pub type Id {
 
 pub type ErrorData(dyn) {
   ErrorData(data: Option(dyn), code: Int, message: String)
+  /// This breaks specification, but some implementations do it anyways. It's
+  /// better to handle it than to cause decode errors, especially since such
+  /// errors are likely not recoverable like structured ones would be.
   ErrorString(String)
 }
 
