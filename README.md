@@ -9,9 +9,10 @@ An implementation of the JSON-RPC 2.0 protocol in Gleam!
 gleam add fiber@1
 ```
 
-Fiber aims to make working with JSON-RPC ergonomic. It provides functions for
-encoding and decoding JSON-RPC messages, builders to define requests and request
-handlers, and tools to construct an actor that keeps track of request ids.
+Fiber aims to make working with JSON-RPC as ergonomic as possible. It provides
+functions for encoding and decoding JSON-RPC messages, builders to define
+requests and request handlers, and tools to construct an actor that keeps track
+of request ids for you.
 
 This package is not tied to any communication protocol. Instead, it's designed
 for you to plug in a backend of your choice using some minimal boilerplate. This
@@ -21,6 +22,9 @@ implementation and RPC logic completely separate and composable. See
 [Backend Example](#backend-example) below.
 
 Further documentation can be found at <https://hexdocs.pm/fiber>.
+
+> [!Note]
+> This package is still a work in progress, and is not yet published.
 
 ## Client Example
 
