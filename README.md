@@ -44,19 +44,6 @@ fn ping() {
   |> request.with_decoder(dynamic.string)
 }
 
-fn get_file_names(server) {
-  request.new(method: "getFileNames")
-  // This method expects a parameter. We encode it like so.
-  |> request.with_params(json.string(server))
-  // We expect a list of strings from this.
-  |> request.with_decoder(dynamic.list(dynamic.string))
-}
-
-fn dynamic() {
-  request.new(method: "dynamic")
-  // If we don't set a decoder, the returned value remains Dynamic.
-}
-
 fn file_updated(file_name) {
   request.new(method: "fileUpdated")
   |> request.with_params(json.string(file_name))
@@ -67,32 +54,6 @@ pub fn main() {
 
   // Requests are not called immediately, they must be passed to fiber.call.
   fiber.call(fiber, ping(), 500) |> should.equal(Ok("pong"))
-  let assert Ok(_) = fiber.call(fiber, get_file_names("home"), 500)
-
-  // You can also send notifications.
-  // It returns Nil and doesn't block.
-  fiber.notify(fiber, file_updated("README.md"))
-
-  // Fiber also supports batches!
-  [
-    // When using batches, you will likely want to use custom ids.
-    // fiber.call will also use these ids! They aren't unique to batches.
-
-    // You can use Strings as ids
-    ping() |> request.with_string_id("a string id"),
-    // You can use Ints as ids
-    ping() |> request.with_int_id(7),
-    // If you don't need a unique id, you can let fiber generate a uuid.
-    // fiber.call will use request.with_uuid by default.
-    ping() |> request.with_uuid,
-
-    // You can also include notifications in batches, just don't set an id.
-    // Requests in batches that are not given an id are treated as notifications.
-    file_updated("README.md"),
-  ]
-  |> fiber.call_batch(fiber, _, 500)
-  |> dict.get("a string id")
-  |> should.equal(Ok(Ok("pong")))
 }
 ```
 
@@ -113,23 +74,7 @@ fn start_server(fiber) {
 }
 
 fn pong(_) {
-  // Request handlers return Result(Json, response.Error)
   json.string("pong") |> Ok
-}
-
-fn file_updated(data) {
-  // Params are passed as Dynamic data, and must be decoded.
-  let assert Ok(params) =
-    data
-    |> dynamic.optional(dynamic.decode2(
-      pair.new,
-      dynamic.field("fileName", dynamic.string),
-      dynamic.field("content", dynamic.string),
-    ))
-
-  // Notification handlers return Nil.
-  // They can never send back to the client.
-  Nil
 }
 
 pub fn main() {
