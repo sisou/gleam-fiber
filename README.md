@@ -65,7 +65,7 @@ import gleam/json
 import gleam/result
 
 import fiber
-import fiber.response
+import fiber/response
 
 fn start_server(fiber) {
   // Depends on your chosen communication protocol.
