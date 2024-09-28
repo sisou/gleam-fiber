@@ -20,32 +20,44 @@ type RequestCallback =
 type NotificationCallback =
   fn(Option(Dynamic)) -> Nil
 
-type SendFunction(send_conn, send_return, send_error) =
-  fn(send_conn, String) -> Result(send_return, send_error)
+type RequestReplySubject =
+  process.Subject(Result(Dynamic, message.ErrorData(Dynamic)))
+
+type BatchReqeustReplySubject =
+  process.Subject(Dict(message.Id, Result(Dynamic, message.ErrorData(Dynamic))))
+
+pub type Direction {
+  ServerOnlyDirection
+  ClientOnlyDirection
+  BidirectionalDirection
+}
 
 pub type FiberBuilder {
   FiberBuilder(
     methods: Dict(String, RequestCallback),
     notifications: Dict(String, NotificationCallback),
+    direction: Option(Direction),
   )
 }
 
-pub opaque type FiberState(send_conn, send_return, send_error) {
-  FiberState(
-    send: SendFunction(send_conn, send_return, send_error),
+type ClientState {
+  ClientState(
+    waiting: Dict(message.Id, RequestReplySubject),
+    waiting_batches: Dict(set.Set(message.Id), BatchReqeustReplySubject),
+  )
+}
+
+type ServerState {
+  ServerState(
     methods: Dict(String, RequestCallback),
     notifications: Dict(String, NotificationCallback),
-    waiting: Dict(
-      message.Id,
-      process.Subject(Result(Dynamic, message.ErrorData(Dynamic))),
-    ),
-    waiting_batches: Dict(
-      set.Set(message.Id),
-      process.Subject(
-        Dict(message.Id, Result(Dynamic, message.ErrorData(Dynamic))),
-      ),
-    ),
   )
+}
+
+pub opaque type FiberState {
+  ClientOnly(client_state: ClientState)
+  ServerOnly(server_state: ServerState)
+  Bidirectional(client_state: ClientState, server_state: ServerState)
 }
 
 pub type Message {
@@ -71,17 +83,39 @@ pub type Message {
 pub type Fiber =
   process.Subject(Message)
 
-pub fn build_state(
-  builder: FiberBuilder,
-  send send: SendFunction(send_conn, send_return, send_error),
-) -> FiberState(send_conn, send_return, send_error) {
-  FiberState(
-    send:,
-    methods: builder.methods,
-    notifications: builder.notifications,
-    waiting: dict.new(),
-    waiting_batches: dict.new(),
-  )
+pub fn build_state(builder: FiberBuilder) -> FiberState {
+  let direction =
+    option.lazy_unwrap(builder.direction, fn() {
+      case
+        dict.is_empty(builder.methods) && dict.is_empty(builder.notifications)
+      {
+        True -> ClientOnlyDirection
+        False -> ServerOnlyDirection
+      }
+    })
+  case direction {
+    BidirectionalDirection ->
+      Bidirectional(
+        server_state: ServerState(
+          methods: builder.methods,
+          notifications: builder.notifications,
+        ),
+        client_state: ClientState(
+          waiting: dict.new(),
+          waiting_batches: dict.new(),
+        ),
+      )
+    ClientOnlyDirection ->
+      ClientOnly(client_state: ClientState(
+        waiting: dict.new(),
+        waiting_batches: dict.new(),
+      ))
+    ServerOnlyDirection ->
+      ServerOnly(server_state: ServerState(
+        methods: builder.methods,
+        notifications: builder.notifications,
+      ))
+  }
 }
 
 pub fn wrap(
@@ -105,59 +139,112 @@ pub fn wrap(
   |> process.select_forever
 }
 
-fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
+pub fn stop_on_error(result: Result(a, b), state: d) -> actor.Next(c, d) {
   case result {
-    Error(_) -> actor.Stop(process.Abnormal("Socket Closed"))
+    Error(e) -> {
+      let reason = string.inspect(e)
+      io.print_error("Fiber closed due to " <> reason)
+      actor.Stop(process.Abnormal(reason))
+    }
     Ok(_) -> actor.continue(state)
   }
 }
 
 fn add_waiting(
-  connection: FiberState(a, b, c),
+  connection: FiberState,
   id: message.Id,
   reply: process.Subject(Result(Dynamic, message.ErrorData(Dynamic))),
-) -> FiberState(a, b, c) {
-  FiberState(
-    ..connection,
-    waiting: connection.waiting |> dict.insert(id, reply),
-  )
+) -> FiberState {
+  case connection {
+    Bidirectional(ClientState(waiting, waiting_batches), server_state) ->
+      Bidirectional(
+        server_state:,
+        client_state: ClientState(
+          waiting_batches:,
+          waiting: waiting |> dict.insert(id, reply),
+        ),
+      )
+    ClientOnly(ClientState(waiting, waiting_batches)) ->
+      ClientOnly(client_state: ClientState(
+        waiting_batches:,
+        waiting: waiting |> dict.insert(id, reply),
+      ))
+    _ -> connection
+  }
 }
 
 fn add_waiting_batch(
-  connection: FiberState(a, b, c),
+  connection: FiberState,
   ids: set.Set(message.Id),
   reply: process.Subject(
     Dict(message.Id, Result(Dynamic, message.ErrorData(Dynamic))),
   ),
-) -> FiberState(a, b, c) {
-  FiberState(
-    ..connection,
-    waiting_batches: connection.waiting_batches |> dict.insert(ids, reply),
-  )
+) -> FiberState {
+  case connection {
+    Bidirectional(ClientState(waiting, waiting_batches), server_state) ->
+      Bidirectional(
+        server_state:,
+        client_state: ClientState(
+          waiting:,
+          waiting_batches: waiting_batches
+            |> dict.insert(ids, reply),
+        ),
+      )
+    ClientOnly(ClientState(waiting, waiting_batches)) ->
+      ClientOnly(client_state: ClientState(
+        waiting:,
+        waiting_batches: waiting_batches
+          |> dict.insert(ids, reply),
+      ))
+    _ -> connection
+  }
 }
 
-fn remove_waiting(
-  connection: FiberState(a, b, c),
-  id: message.Id,
-) -> FiberState(a, b, c) {
-  FiberState(..connection, waiting: connection.waiting |> dict.delete(id))
+fn remove_waiting(connection: FiberState, id: message.Id) -> FiberState {
+  case connection {
+    Bidirectional(ClientState(waiting, waiting_batches), server_state) ->
+      Bidirectional(
+        server_state:,
+        client_state: ClientState(
+          waiting_batches:,
+          waiting: waiting |> dict.delete(id),
+        ),
+      )
+    ClientOnly(ClientState(waiting, waiting_batches)) ->
+      ClientOnly(client_state: ClientState(
+        waiting_batches:,
+        waiting: waiting |> dict.delete(id),
+      ))
+    _ -> connection
+  }
 }
 
 fn remove_waiting_batch(
-  connection: FiberState(a, b, c),
+  connection: FiberState,
   ids: set.Set(message.Id),
-) -> FiberState(a, b, c) {
-  FiberState(
-    ..connection,
-    waiting_batches: connection.waiting_batches |> dict.delete(ids),
-  )
+) -> FiberState {
+  case connection {
+    Bidirectional(ClientState(waiting, waiting_batches), server_state) ->
+      Bidirectional(
+        server_state:,
+        client_state: ClientState(
+          waiting:,
+          waiting_batches: waiting_batches |> dict.delete(ids),
+        ),
+      )
+    ClientOnly(ClientState(waiting, waiting_batches)) ->
+      ClientOnly(client_state: ClientState(
+        waiting:,
+        waiting_batches: waiting_batches |> dict.delete(ids),
+      ))
+    _ -> connection
+  }
 }
 
 pub fn handle_text(
-  state: FiberState(a, b, c),
-  conn: a,
+  state: FiberState,
   message text: String,
-) -> actor.Next(m, FiberState(a, b, c)) {
+) -> Result(message.Message(Json), Nil) {
   case message.decode(text) {
     Error(error) -> {
       case error {
@@ -190,35 +277,28 @@ pub fn handle_text(
           )
       }
       |> message.ErrorMessage
-      |> message.encode
-      |> json.to_string
-      |> state.send(conn, _)
-      |> stop_on_error(state)
+      |> Ok
     }
-    Ok(message) -> handle_message(state, conn, message)
+    Ok(message) -> handle_message(state, message)
   }
 }
 
 pub fn fiber_message(
-  state: FiberState(a, b, c),
-  conn: a,
-  message state_message: Message,
-) -> actor.Next(m, FiberState(a, b, c)) {
-  case state_message {
+  state: FiberState,
+  message message: Message,
+  send send: fn(message.Message(Json)) -> Result(a, b),
+) -> actor.Next(m, FiberState) {
+  case message {
     Request(method, params, id, reply_subject) -> {
       message.Request(params, method, id)
       |> message.RequestMessage
-      |> message.encode
-      |> json.to_string
-      |> state.send(conn, _)
+      |> send
       |> stop_on_error(state |> add_waiting(id, reply_subject))
     }
     Notification(method, params) -> {
       message.Notification(params, method)
       |> message.RequestMessage
-      |> message.encode
-      |> json.to_string
-      |> state.send(conn, _)
+      |> send
       |> stop_on_error(state)
     }
     Batch(batch, ids, reply_subject) -> {
@@ -231,9 +311,7 @@ pub fn fiber_message(
         }
       })
       |> message.BatchRequestMessage
-      |> message.encode
-      |> json.to_string
-      |> state.send(conn, _)
+      |> send
       |> stop_on_error(state |> add_waiting_batch(ids, reply_subject))
     }
     RemoveWaiting(id) -> actor.continue(state |> remove_waiting(id))
@@ -244,20 +322,26 @@ pub fn fiber_message(
 }
 
 pub fn handle_binary(
-  state: FiberState(a, b, c),
-  conn: a,
+  state: FiberState,
   message _binary: BitArray,
-) -> actor.Next(m, FiberState(a, b, c)) {
-  message.ErrorData(
-    code: -32_700,
-    message: "Parse error",
-    data: option.Some(json.string("binary frames are unsupported")),
-  )
-  |> message.ErrorMessage
-  |> message.encode
-  |> json.to_string
-  |> state.send(conn, _)
-  |> stop_on_error(state)
+) -> Result(message.Message(Json), Nil) {
+  case state {
+    Bidirectional(_, _) | ServerOnly(_) ->
+      message.ErrorData(
+        code: -32_700,
+        message: "Parse error",
+        data: option.Some(json.string("binary frames are unsupported")),
+      )
+      |> message.ErrorMessage
+      |> Ok
+    ClientOnly(_) -> {
+      // we can't reply to this, so just log an error
+      io.println_error(
+        "Received binary data, which is unsupported by this backend",
+      )
+      Error(Nil)
+    }
+  }
 }
 
 fn handle_request_callback_result(
@@ -287,12 +371,12 @@ fn handle_request_callback_result(
 }
 
 fn process_request(
-  state: FiberState(a, b, c),
+  server_state: ServerState,
   request: message.Request(Dynamic),
 ) -> Result(message.Response(Json), Nil) {
   case request {
     message.Notification(params, method) ->
-      case state.notifications |> dict.get(method) {
+      case server_state.notifications |> dict.get(method) {
         Error(Nil) -> {
           // simply ignore  and log unknown notifications, as the spec says never to reply to them
           io.println_error(
@@ -309,7 +393,7 @@ fn process_request(
         }
       }
     message.Request(params, method, id) ->
-      case state.methods |> dict.get(method) {
+      case server_state.methods |> dict.get(method) {
         Error(Nil) -> {
           option.Some(json.string(method))
           |> message.ErrorData(code: -32_601, message: "Method not found")
@@ -325,31 +409,13 @@ fn process_request(
   }
 }
 
-fn handle_request(
-  state: FiberState(a, b, c),
-  conn: a,
-  request: message.Request(Dynamic),
-) -> actor.Next(m, FiberState(a, b, c)) {
-  case process_request(state, request) {
-    Error(Nil) -> actor.continue(state)
-    Ok(response) ->
-      response
-      |> message.ResponseMessage
-      |> message.encode
-      |> json.to_string
-      |> state.send(conn, _)
-      |> stop_on_error(state)
-  }
-}
-
 fn handle_response(
-  state: FiberState(a, b, c),
-  _conn: a,
+  client_state: ClientState,
   response: message.Response(Dynamic),
-) -> actor.Next(m, FiberState(a, b, c)) {
+) -> Nil {
   case response {
     message.ErrorResponse(error, id) ->
-      case state.waiting |> dict.get(id) {
+      case client_state.waiting |> dict.get(id) {
         Error(Nil) -> {
           // we can't reply to this, so just log an error
           io.println_error(
@@ -358,17 +424,13 @@ fn handle_response(
             <> ", error: "
             <> string.inspect(error),
           )
-
-          actor.continue(state)
         }
         Ok(reply_subject) -> {
           reply_subject |> process.send(Error(error))
-
-          actor.continue(state)
         }
       }
     message.SuccessResponse(result, id) ->
-      case state.waiting |> dict.get(id) {
+      case client_state.waiting |> dict.get(id) {
         Error(Nil) -> {
           // we can't reply to this, so just log an error
           io.println_error(
@@ -377,38 +439,36 @@ fn handle_response(
             <> ", result: "
             <> string.inspect(result),
           )
-
-          actor.continue(state)
         }
         Ok(reply_subject) -> {
           reply_subject |> process.send(Ok(result))
-
-          actor.continue(state)
         }
       }
   }
 }
 
 fn handle_batch_request(
-  state: FiberState(a, b, c),
-  conn: a,
+  server_state: ServerState,
   batch: List(message.Request(Dynamic)),
-) -> actor.Next(m, FiberState(a, b, c)) {
-  batch
-  |> list.map(process_request(state, _))
-  |> result.values
-  |> message.BatchResponseMessage
-  |> message.encode
-  |> json.to_string
-  |> state.send(conn, _)
-  |> stop_on_error(state)
+) -> Result(message.Message(Json), Nil) {
+  let responses =
+    batch
+    |> list.map(process_request(server_state, _))
+    |> result.values
+
+  case responses {
+    [] -> Error(Nil)
+    responses ->
+      responses
+      |> message.BatchResponseMessage
+      |> Ok
+  }
 }
 
 fn handle_batch_response(
-  state: FiberState(a, b, c),
-  _conn: a,
+  client_state: ClientState,
   batch: List(message.Response(Dynamic)),
-) -> actor.Next(m, FiberState(a, b, c)) {
+) -> Nil {
   let ids =
     batch
     |> list.map(fn(response) {
@@ -419,15 +479,13 @@ fn handle_batch_response(
     })
     |> set.from_list
 
-  case state.waiting_batches |> dict.get(ids) {
+  case client_state.waiting_batches |> dict.get(ids) {
     Error(Nil) -> {
       // we can't reply to this, so just log an error
       io.println_error(
         "Received batch response for an id set that we were not waiting for (it possibly timed out): "
         <> string.inspect(ids),
       )
-
-      actor.continue(state)
     }
     Ok(reply_subject) -> {
       batch
@@ -439,24 +497,52 @@ fn handle_batch_response(
       })
       |> dict.from_list
       |> process.send(reply_subject, _)
-
-      actor.continue(state)
     }
   }
 }
 
 fn handle_message(
-  state: FiberState(a, b, c),
-  conn: a,
+  state: FiberState,
   message fiber_message: message.Message(Dynamic),
-) -> actor.Next(m, FiberState(a, b, c)) {
+) -> Result(message.Message(Json), Nil) {
   case fiber_message {
     message.BatchRequestMessage(batch) ->
-      handle_batch_request(state, conn, batch)
+      case state {
+        ServerOnly(server_state) | Bidirectional(_, server_state) ->
+          handle_batch_request(server_state, batch)
+
+        _ -> Error(Nil)
+      }
+
     message.BatchResponseMessage(batch) ->
-      handle_batch_response(state, conn, batch)
-    message.RequestMessage(request) -> handle_request(state, conn, request)
-    message.ResponseMessage(response) -> handle_response(state, conn, response)
+      case state {
+        ClientOnly(client_state) | Bidirectional(client_state, _) ->
+          Error(handle_batch_response(client_state, batch))
+        _ -> Error(Nil)
+      }
+
+    message.RequestMessage(request) ->
+      case state {
+        ServerOnly(server_state) | Bidirectional(_, server_state) ->
+          case process_request(server_state, request) {
+            Error(Nil) -> Error(Nil)
+            Ok(response) ->
+              response
+              |> message.ResponseMessage
+              |> Ok
+          }
+
+        _ -> Error(Nil)
+      }
+
+    message.ResponseMessage(response) ->
+      case state {
+        ClientOnly(client_state) | Bidirectional(client_state, _) ->
+          Error(handle_response(client_state, response))
+
+        _ -> Error(Nil)
+      }
+
     message.ErrorMessage(error) -> {
       // we can't reply to this according to the spec, so just log an error
       io.println_error(
@@ -464,7 +550,7 @@ fn handle_message(
         <> string.inspect(error),
       )
 
-      actor.continue(state)
+      Error(Nil)
     }
   }
 }

@@ -12,7 +12,11 @@ import fiber/message
 import fiber/request
 
 pub fn new() -> backend.FiberBuilder {
-  backend.FiberBuilder(methods: dict.new(), notifications: dict.new())
+  backend.FiberBuilder(
+    methods: dict.new(),
+    notifications: dict.new(),
+    direction: option.None,
+  )
 }
 
 pub fn on_request(
@@ -34,6 +38,27 @@ pub fn on_notification(
   backend.FiberBuilder(
     ..builder,
     notifications: builder.notifications |> dict.insert(method, callback),
+  )
+}
+
+pub fn bidirectional(builder: backend.FiberBuilder) -> backend.FiberBuilder {
+  backend.FiberBuilder(
+    ..builder,
+    direction: option.Some(backend.BidirectionalDirection),
+  )
+}
+
+pub fn client_only(builder: backend.FiberBuilder) -> backend.FiberBuilder {
+  backend.FiberBuilder(
+    ..builder,
+    direction: option.Some(backend.ClientOnlyDirection),
+  )
+}
+
+pub fn server_only(builder: backend.FiberBuilder) -> backend.FiberBuilder {
+  backend.FiberBuilder(
+    ..builder,
+    direction: option.Some(backend.ServerOnlyDirection),
   )
 }
 
