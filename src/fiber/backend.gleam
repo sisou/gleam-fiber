@@ -14,10 +14,10 @@ import gleam/string
 import fiber/message
 import fiber/response
 
-type RequestCallback =
+pub type RequestCallback =
   fn(Option(Dynamic)) -> Result(Json, response.Error)
 
-type NotificationCallback =
+pub type NotificationCallback =
   fn(Option(Dynamic)) -> Nil
 
 type RequestReplySubject =
