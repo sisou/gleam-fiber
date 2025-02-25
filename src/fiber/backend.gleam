@@ -254,6 +254,12 @@ pub fn handle_text(
             message: "Invalid Request",
             data: option.None,
           )
+        json.UnableToDecode(_) ->
+          message.ErrorData(
+            code: -32_600,
+            message: "Invalid Request",
+            data: option.None,
+          )
         json.UnexpectedByte(byte) ->
           message.ErrorData(
             code: -32_700,
