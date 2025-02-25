@@ -166,7 +166,10 @@ fn encode_request(request: Request(Json)) {
           #("jsonrpc", json.string("2.0")) |> Ok,
           #("id", encode_id(id)) |> Ok,
           #("method", json.string(method)) |> Ok,
-          params |> option.map(pair.new("params", _)) |> option.to_result(Nil),
+          params
+            |> option.map(pair.new("params", _))
+            |> option.unwrap(#("params", json.preprocessed_array([])))
+            |> Ok(),
         ]),
       )
   }
