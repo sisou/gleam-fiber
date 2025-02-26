@@ -1,4 +1,5 @@
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/json.{type Json}
 import gleam/option.{type Option}
 import youid/uuid
@@ -9,7 +10,7 @@ pub type Request(return) {
   Request(
     method: String,
     params: Option(Json),
-    decoder: dynamic.Decoder(return),
+    decoder: decode.Decoder(return),
     id: Option(message.Id),
   )
 }
@@ -18,7 +19,7 @@ pub fn new(method method: String) -> Request(Dynamic) {
   Request(
     method:,
     params: option.None,
-    decoder: dynamic.dynamic,
+    decoder: decode.dynamic,
     id: option.None,
   )
 }
@@ -29,7 +30,7 @@ pub fn with_params(request: Request(a), params: Json) -> Request(a) {
 
 pub fn with_decoder(
   request: Request(a),
-  decoder decoder: dynamic.Decoder(b),
+  decoder decoder: decode.Decoder(b),
 ) -> Request(b) {
   Request(
     method: request.method,

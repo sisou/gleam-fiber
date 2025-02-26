@@ -1,5 +1,6 @@
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
 import gleam/option
@@ -64,7 +65,7 @@ pub fn server_only(builder: backend.FiberBuilder) -> backend.FiberBuilder {
 
 pub type RequestError(a) {
   ReturnedError(message.ErrorData(Dynamic))
-  DecodeError(dynamic.DecodeErrors)
+  DecodeError(List(decode.DecodeError))
   CallError(process.CallError(a))
 }
 
@@ -85,7 +86,7 @@ pub fn call(
     |> result.map(fn(call_result) {
       call_result
       |> result.map(fn(data) {
-        request.decoder(data)
+        decode.run(data, request.decoder)
         |> result.map_error(DecodeError)
       })
       |> result.map_error(ReturnedError)
