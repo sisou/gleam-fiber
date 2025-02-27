@@ -1,4 +1,5 @@
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/json.{type Json}
 import gleam/option.{type Option}
 import gleam/pair
@@ -35,87 +36,91 @@ pub type Message(dyn) {
   BatchResponseMessage(List(Response(dyn)))
 }
 
-fn id_decoder() {
-  dynamic.any([
-    fn(data) { dynamic.int(data) |> result.map(IntId) },
-    fn(data) { dynamic.string(data) |> result.map(StringId) },
+fn id_decoder() -> decode.Decoder(Id) {
+  decode.one_of(decode.int |> decode.map(IntId), [
+    decode.string |> decode.map(StringId),
   ])
+  |> decode.collapse_errors("Id")
 }
 
-fn error_data_decoder() {
-  dynamic.any([
-    fn(v) { dynamic.string(v) |> result.map(ErrorString) },
-    dynamic.decode3(
-      ErrorData,
-      dynamic.optional_field("data", dynamic.dynamic),
-      dynamic.field("code", dynamic.int),
-      dynamic.field("message", dynamic.string),
-    ),
-  ])
-}
-
-fn request_decoder() {
-  dynamic.any([
-    dynamic.decode3(
-      Request,
-      dynamic.optional_field("params", dynamic.dynamic),
-      dynamic.field("method", dynamic.string),
-      dynamic.field("id", id_decoder()),
-    ),
-    dynamic.decode2(
-      Notification,
-      dynamic.optional_field("params", dynamic.dynamic),
-      dynamic.field("method", dynamic.string),
-    ),
-  ])
-}
-
-fn response_decoder() {
-  dynamic.any([
-    dynamic.decode2(
-      SuccessResponse,
-      dynamic.field("result", dynamic.dynamic),
-      dynamic.field("id", id_decoder()),
-    ),
-    dynamic.decode2(
-      ErrorResponse,
-      dynamic.field("error", error_data_decoder()),
-      dynamic.field("id", id_decoder()),
-    ),
-  ])
-}
-
-fn error_decoder() {
-  dynamic.field("error", error_data_decoder())
-}
-
-fn message_decoder() {
-  dynamic.any([
-    fn(d) {
-      response_decoder()(d)
-      |> result.map(ResponseMessage)
-    },
-    fn(d) {
-      request_decoder()(d)
-      |> result.map(RequestMessage)
-    },
-    fn(d) {
-      error_decoder()(d)
-      |> result.map(ErrorMessage)
-    },
-    fn(d) {
-      dynamic.list(request_decoder())(d)
-      |> result.map(BatchRequestMessage)
-    },
-    fn(d) {
-      dynamic.list(response_decoder())(d)
-      |> result.map(BatchResponseMessage)
+fn error_data_decoder() -> decode.Decoder(ErrorData(Dynamic)) {
+  decode.one_of(decode.string |> decode.map(ErrorString), [
+    {
+      use data <- decode.optional_field(
+        "data",
+        option.None,
+        decode.optional(decode.dynamic),
+      )
+      use code <- decode.field("code", decode.int)
+      use message <- decode.field("message", decode.string)
+      decode.success(ErrorData(data, code, message))
     },
   ])
+  |> decode.collapse_errors("ErrorData")
+}
+
+fn request_decoder() -> decode.Decoder(Request(Dynamic)) {
+  decode.one_of(
+    {
+      use params <- decode.optional_field(
+        "params",
+        option.None,
+        decode.optional(decode.dynamic),
+      )
+      use method <- decode.field("method", decode.string)
+      use id <- decode.field("id", id_decoder())
+      decode.success(Request(params, method, id))
+    },
+    [
+      {
+        use params <- decode.optional_field(
+          "params",
+          option.None,
+          decode.optional(decode.dynamic),
+        )
+        use method <- decode.field("method", decode.string)
+        decode.success(Notification(params, method))
+      },
+    ],
+  )
+  |> decode.collapse_errors("Request")
+}
+
+fn response_decoder() -> decode.Decoder(Response(Dynamic)) {
+  decode.one_of(
+    {
+      use result <- decode.field("result", decode.dynamic)
+      use id <- decode.field("id", id_decoder())
+      decode.success(SuccessResponse(result, id))
+    },
+    [
+      {
+        use error <- decode.field("error", error_data_decoder())
+        use id <- decode.field("id", id_decoder())
+        decode.success(ErrorResponse(error, id))
+      },
+    ],
+  )
+  |> decode.collapse_errors("Response")
+}
+
+fn error_decoder() -> decode.Decoder(ErrorData(Dynamic)) {
+  use error <- decode.field("error", error_data_decoder())
+  decode.success(error)
+}
+
+fn message_decoder() -> decode.Decoder(Message(Dynamic)) {
+  decode.one_of(response_decoder() |> decode.map(ResponseMessage), [
+    request_decoder() |> decode.map(RequestMessage),
+    error_decoder() |> decode.map(ErrorMessage),
+    decode.list(request_decoder()) |> decode.map(BatchRequestMessage),
+    decode.list(response_decoder()) |> decode.map(BatchResponseMessage),
+  ])
+  |> decode.collapse_errors("Message")
 }
 
 pub fn decode(text: String) -> Result(Message(Dynamic), json.DecodeError) {
-  json.decode(text, message_decoder())
+  json.parse(text, message_decoder())
 }
 
 pub fn from_json(text: String) -> Result(Message(Dynamic), json.DecodeError) {

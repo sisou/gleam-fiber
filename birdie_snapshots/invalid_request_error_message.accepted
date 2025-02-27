@@ -1,7 +1,7 @@
 ---
-version: 1.2.3
+version: 1.2.6
 title: invalid request error message
 file: ./test/message_test.gleam
 test_name: invalid_message_test
 ---
-UnexpectedFormat([DecodeError("another type", "Dict", [])])
+UnableToDecode([DecodeError("Message", "Dict", [])])

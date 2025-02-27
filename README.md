@@ -29,7 +29,7 @@ Further documentation can be found at <https://hexdocs.pm/fiber>.
 ## Client Example
 
 ```gleam
-import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/json
 import gleeunit/should
 
@@ -45,7 +45,7 @@ fn start_client(fiber) {
 fn ping() {
   request.new(method: "ping")
   // We expect "pong" from this, so we can decode the result into a string.
-  |> request.with_decoder(dynamic.string)
+  |> request.with_decoder(decode.string)
 }
 
 fn file_updated(file_name) {
